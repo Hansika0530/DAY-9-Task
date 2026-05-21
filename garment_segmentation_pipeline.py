@@ -2,7 +2,7 @@ import cv2, numpy as np, mediapipe as mp, math
 from pathlib import Path
 from PIL import Image
 PERSON = r"C:\Users\Hansika\Downloads\segment\Blackman.png"
-CLOTH  = r"C:\Users\Hansika\Downloads\segment\Blackman.png"# change to cloth image
+CLOTH  = r"C:\Users\Hansika\Downloads\segment\Blackman.png"
 OUTPUT = r"C:\Users\Hansika\Downloads\segment\output"
 
 Path(OUTPUT).mkdir(exist_ok=True)
@@ -12,8 +12,6 @@ cloth  = cv2.imread(CLOTH)
 H, W   = person.shape[:2]
 
 results = {}   
-
-# 1. Original image
 results["Image"] = person.copy()
 
 print("Running human parsing...")
@@ -28,8 +26,6 @@ pil   = Image.fromarray(cv2.cvtColor(person, cv2.COLOR_BGR2RGB))
 out   = model(**proc(images=pil, return_tensors="pt"))
 seg   = F.interpolate(out.logits, (H, W), mode="bilinear", align_corners=False)
 seg   = seg.argmax(1).squeeze().numpy().astype(np.uint8)
-
-# Color map: label → BGR color
 COLORS = {
     0:(0,0,0), 1:(0,0,128), 2:(0,0,255), 3:(221,170,51),
     4:(0,85,255), 5:(0,128,0), 6:(85,85,0), 7:(85,0,85),
@@ -38,7 +34,6 @@ COLORS = {
     16:(128,128,128), 17:(128,0,128)
 }
 
-# 4. Parse — colored body map
 parse = np.zeros((H, W, 3), np.uint8)
 for lbl, col in COLORS.items():
     parse[seg == lbl] = col
@@ -48,19 +43,14 @@ results["Parse"] = parse
 garment_mask = np.isin(seg, [4, 7]).astype(np.uint8) * 255
 garment_mask = cv2.dilate(garment_mask, np.ones((15,15), np.uint8), iterations=2)
 
-# 9. Agnostic-Mask
 results["Agnostic-Mask"] = cv2.cvtColor(garment_mask, cv2.COLOR_GRAY2BGR)
-
-# 3. Parse-Agnostic
 pa = parse.copy(); pa[garment_mask > 0] = 0
 results["Parse-Agnostic-v3.2"] = pa
 
-# 2. Agnostic
 ag = person.copy()
 ag[garment_mask > 0] = (cv2.GaussianBlur(person,(51,51),0) * 0.5)[garment_mask > 0]
 results["Agnostic-v3.2"] = ag
 
-# ── Pose (MediaPipe) ─────────────────────────────────────────────────
 print("Running pose detection...")
 pose_model = mp.solutions.pose.Pose(static_image_mode=True, model_complexity=2, enable_segmentation=True)
 pr = pose_model.process(cv2.cvtColor(person, cv2.COLOR_BGR2RGB))
@@ -68,8 +58,6 @@ lms = pr.pose_landmarks.landmark if pr.pose_landmarks else []
 
 def pt(i): return int(lms[i].x*W), int(lms[i].y*H)
 def vis(i): return lms[i].visibility > 0.3 if lms else False
-
-# 6. Open Pose — skeleton on black
 op = np.zeros((H, W, 3), np.uint8)
 BONES = [(11,12),(11,13),(13,15),(12,14),(14,16),(11,23),(12,24),(23,24),(23,25),(25,27),(24,26),(26,28)]
 KPCOLORS = [(255,0,0),(255,85,0),(255,170,0),(255,255,0),(170,255,0),(85,255,0),
@@ -80,8 +68,6 @@ if lms:
     for i in range(13):
         if vis(i): cv2.circle(op, pt(i), 8, KPCOLORS[i], -1)
 results["Open pose"] = op
-
-# 5. Dense Pose — colored body regions
 dp = np.zeros((H, W, 3), np.uint8)
 if lms and pr.segmentation_mask is not None:
     body = (pr.segmentation_mask > 0.5).astype(np.uint8)
@@ -127,7 +113,6 @@ for i, name in enumerate(ORDER):
     tw, _  = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0]
     cv2.putText(canvas, name, (x+(TW-tw)//2, y+TH+18),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, (220,220,220), 1, cv2.LINE_AA)
-
 out_path = str(Path(OUTPUT)/"FINAL_GRID.png")
 cv2.imwrite(out_path, canvas)
 print(f"\nDone! Open: {out_path}")
